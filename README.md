@@ -11,17 +11,17 @@
 PDFs (data/raw/)
       │
       ▼
-[1] PDF Extraction     ← PyMuPDF → pdfplumber → pytesseract (cascade)
+[1] PDF Extraction      ← PyMuPDF → pdfplumber → pytesseract (cascade)
       │
       ▼
-[2] Text Cleaning      ← Unicode normalization, boilerplate removal
+[2] Text Cleaning       ← Unicode normalization, boilerplate removal
       │
       ▼
 [3] Metadata Extraction ← RegEx: case number, judges, acts, citations, outcome
       │
       ├────────────────────────────────────────┐
       ▼                                        ▼
-[4] Chunking (512 tok)            [5] PostgreSQL (metadata + chunks)
+[4] Chunking (512 tok)          [5] PostgreSQL (metadata + chunks)
       │
       ▼
 [6] Embedding (all-MiniLM-L6-v2)
@@ -32,53 +32,197 @@ PDFs (data/raw/)
 
 ---
 
-## ⚡ Quick Start
+## ⚡ Prerequisites
 
-### 1. Prerequisites
-- Python 3.10+
-- Docker Desktop running
+- Python 3.10+ (tested on Python 3.13)
+- Docker Desktop (must be **open and running**)
 - ~5GB disk space (models + data)
 
-### 2. Setup (one command)
+---
+
+## 🚀 Step-by-Step Setup (First Time Only)
+
+### Step 1 — Navigate to the project folder
 ```bash
-cd /path/to/Capstone
-cp .env.example .env
-make setup
+cd /Users/amrutha/Downloads/Capstone
 ```
 
-This will:
-- Install all Python dependencies
-- Download the spaCy English model
-- Start PostgreSQL via Docker
-- Initialize the database schema
-
-### 3. Add Your PDFs
+### Step 2 — Activate the virtual environment
 ```bash
-# Place all ~26,000 PDF files here:
-cp /path/to/sc_judgments/*.pdf data/raw/
+source venv/bin/activate
+```
+Your terminal prompt should now show `(venv)` at the start.
+
+> ⚠️ **Every time you open a new terminal**, you MUST run this before anything else.
+
+### Step 3 — Install dependencies
+```bash
+pip install -r requirements.txt
+```
+> This takes 5–10 minutes on first run (downloads PyTorch ~80MB and other packages).
+
+### Step 4 — Download the spaCy language model
+```bash
+python -m spacy download en_core_web_sm
 ```
 
-### 4. Run the Pipeline
+### Step 5 — Open Docker Desktop
+Open the **Docker Desktop** app on your Mac. Wait until it says "Docker Desktop is running".
+
+### Step 6 — Start PostgreSQL
 ```bash
-# Full run (all PDFs, resumable):
-make run-pipeline
-
-# Quick test (first 10 PDFs only):
-make test-run
-
-# Retry previously failed files:
-make retry-failed
+make docker-up
+```
+Expected output:
+```
+✔ Container judicial_db    Healthy
+✓ PostgreSQL started. pgAdmin available at http://localhost:5050
 ```
 
-### 5. Start the API
+### Step 7 — Initialize the database
 ```bash
-make run-api
-# API docs: http://localhost:8000/docs
+python scripts/init_db.py
+```
+Expected output:
+```
+INFO  | Database tables created / verified.
+INFO  | ✓ Database initialized successfully.
 ```
 
 ---
 
+## 📂 Add Your PDF Files
+
+Place all Supreme Court judgment PDFs in `data/raw/`:
+```bash
+mkdir -p data/raw
+cp /path/to/your/pdfs/*.pdf data/raw/
+```
+
+> ⚠️ Make sure files end in `.pdf` (lowercase). If they are `.PDF`, rename them:
+> ```bash
+> cd data/raw && for f in *.PDF; do mv "$f" "${f%.PDF}.pdf"; done
+> ```
+
+---
+
+## ▶️ Running the Pipeline
+
+### Quick test — process 5 PDFs only (recommended first time)
+```bash
+python scripts/run_pipeline.py --limit 5
+```
+
+### Full run — process all PDFs (resumable if interrupted)
+```bash
+python scripts/run_pipeline.py
+```
+
+### Retry failed files
+```bash
+python scripts/run_pipeline.py --retry-failed
+```
+
+> ⏱️ Full run on 26K PDFs takes **6–10 hours on CPU**. It resumes automatically if stopped — just re-run the same command.
+
+Expected output after a successful run:
+```
+       Pipeline Run Summary
+┏━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━┓
+┃ Metric                 ┃ Count ┃
+┡━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━┩
+│ Total PDFs             │     5 │
+│ Processed              │     5 │
+│ Skipped (already done) │     0 │
+│ Failed                 │     0 │
+│ FAISS vectors          │    77 │
+└────────────────────────┴───────┘
+✓ Pipeline run complete.
+```
+
+---
+
+## 🌐 Starting the API Server
+
+Open a **new terminal tab** (keep the pipeline terminal open), then:
+
+```bash
+cd /Users/amrutha/Downloads/Capstone
+source venv/bin/activate
+python -m uvicorn api.main:app --reload --host 0.0.0.0 --port 8000
+```
+
+> ⚠️ Use `python -m uvicorn` (NOT just `uvicorn`) to ensure it uses the venv Python.
+
+Expected output:
+```
+INFO:     Uvicorn running on http://0.0.0.0:8000 (Press CTRL+C to quit)
+INFO:     Application startup complete.
+```
+
+Open in browser: **http://localhost:8000/docs**
+
+> ⚠️ If you ran the pipeline AFTER starting the API, restart the API so it loads the new FAISS index.
+
+---
+
+## 🔌 API Usage
+
+### Semantic Search
+Go to **http://localhost:8000/docs** → `POST /api/v1/search` → Try it out:
+```json
+{
+  "query": "bail application murder case",
+  "top_k": 5
+}
+```
+
+### Trigger Ingestion via API
+```json
+POST /api/v1/ingest
+{
+  "pdf_dir": "data/raw",
+  "limit": null,
+  "retry_failed": false,
+  "embedding_batch_size": 64
+}
+```
+
+### System Stats
+```
+GET /api/v1/stats
+```
+
+---
+
+## 🗄️ Viewing Data in pgAdmin
+
+Open **http://localhost:5050**
+
+Login:
+- Email: `admin@judicial.ai`
+- Password: `admin`
+
+### Connect to the database:
+1. Right-click **Servers** → **Register** → **Server...**
+2. **General tab** → Name: `judicial_db`
+3. **Connection tab**:
+   - Host: `judicial_db`  ← use container name, NOT localhost
+   - Port: `5432`
+   - Database: `judicial_db`
+   - Username: `judicial`
+   - Password: `judicial`
+4. Click **Save**
+
+Browse tables: `judicial_db → Schemas → public → Tables`
+- `cases` — extracted metadata for each judgment
+- `chunks` — text chunks per case
+- `pipeline_runs` — history of pipeline runs
+
+---
+
 ## 📁 Project Structure
+
 ```
 Capstone/
 ├── data/
@@ -116,147 +260,58 @@ Capstone/
 ├── docker-compose.yml          ← PostgreSQL + pgAdmin
 ├── requirements.txt
 ├── Makefile
-└── .env.example
+└── .env
 ```
 
 ---
 
-## 🔌 API Reference
+## 🔁 Every Time You Return to This Project
 
-### Trigger Ingestion
-```http
-POST /api/v1/ingest
-Content-Type: application/json
+When you open a new terminal session, always run these first:
 
-{
-  "pdf_dir": "data/raw",
-  "limit": null,
-  "retry_failed": false,
-  "embedding_batch_size": 64
-}
-```
+```bash
+cd /Users/amrutha/Downloads/Capstone
 
-### Poll Run Status
-```http
-GET /api/v1/ingest/{run_id}
-```
+# 1. Activate venv
+source venv/bin/activate
 
-### Semantic Search
-```http
-POST /api/v1/search
-Content-Type: application/json
+# 2. Make sure Docker Desktop is open, then start PostgreSQL
+make docker-up
 
-{
-  "query": "bail application in murder cases",
-  "top_k": 10,
-  "filters": {
-    "year_from": 2010,
-    "year_to": 2024,
-    "case_type": "Criminal Appeal",
-    "outcome": "Allowed"
-  }
-}
-```
-
-### Get Case Metadata
-```http
-GET /api/v1/cases/{case_id}
-```
-
-### System Stats
-```http
-GET /api/v1/stats
+# 3. Start the API (in a separate terminal tab)
+python -m uvicorn api.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
 ---
 
-## ⚙️ Configuration
+## 🛠️ Troubleshooting
 
-All settings are in `.env` (copy from `.env.example`):
-
-| Variable | Default | Description |
-|---|---|---|
-| `EMBEDDING_MODEL` | `all-MiniLM-L6-v2` | HuggingFace model name |
-| `EMBEDDING_BATCH_SIZE` | `32` | Chunks per embedding batch |
-| `CHUNK_SIZE` | `512` | Target tokens per chunk |
-| `CHUNK_OVERLAP` | `64` | Token overlap between chunks |
-| `MAX_WORKERS` | `4` | Parallel PDF extraction workers |
-| `USE_IVF` | `false` | Use IVF index for >100K vectors |
-
----
-
-## 🗄️ Database Schema
-
-### `cases` table
-Key columns: `case_id`, `case_number`, `case_type`, `year`, `judges` (JSONB),
-`acts_cited` (JSONB), `citations` (JSONB), `outcome`, `extraction_confidence`
-
-### `chunks` table
-Key columns: `case_id` (FK), `chunk_index`, `text`, `faiss_id`
-
-### `pipeline_runs` table
-Audit log: `run_id`, `status`, `processed_files`, `failed_files`
-
----
-
-## 🔁 Checkpointing
-
-The pipeline uses SQLite (`data/checkpoint.db`) to track per-file status:
-
-| Status | Meaning |
+| Problem | Fix |
 |---|---|
-| `done` | Successfully extracted, embedded, and stored |
-| `in_progress` | Currently being processed |
-| `failed` | Extraction or processing failed |
-
-Re-running `make run-pipeline` automatically **skips** files with `done` status.
-Use `make retry-failed` to reprocess failed files.
+| `externally-managed-environment` error | Run `source venv/bin/activate` first |
+| `ModuleNotFoundError` | Use `python -m uvicorn` instead of `uvicorn` |
+| Port 5432 already in use | Run `make docker-down` then `make docker-up` |
+| "Search index is empty" | Restart the API after running the pipeline |
+| pgAdmin "connection refused" | Use `judicial_db` as host, NOT `localhost` |
+| Pipeline finds 0 PDFs | Check file extensions — must be `.pdf` not `.PDF` |
+| Docker not starting | Open Docker Desktop app first |
 
 ---
 
 ## 🧪 Running Tests
 
 ```bash
-# All unit tests (no DB required)
-make test
-
-# Fast mode (skip integration tests)
-make test-fast
+python -m pytest tests/ -v --tb=short
 ```
 
 ---
 
 ## 📊 Performance Estimates (CPU-only)
 
-| Stage | Speed | Notes |
-|---|---|---|
-| PDF Extraction (PyMuPDF) | ~50 PDFs/min | 4 workers |
-| Text Cleaning | ~500 docs/min | In-memory |
-| Metadata Extraction | ~300 docs/min | Regex-only |
-| Chunking | ~200 docs/min | ~20 chunks/doc avg |
-| Embedding (all-MiniLM) | ~150 chunks/min | CPU, batch=32 |
-| FAISS Indexing | ~5,000 vecs/sec | IndexFlatIP |
+| Stage | Speed |
+|---|---|
+| PDF Extraction | ~50 PDFs/min (4 workers) |
+| Embedding (all-MiniLM) | ~150 chunks/min |
+| FAISS Indexing | ~5,000 vectors/sec |
 
 **Estimated total time for 26K PDFs: 6–10 hours on CPU**
-
----
-
-## 🛠️ Troubleshooting
-
-**PostgreSQL connection refused:**
-```bash
-make docker-up
-sleep 5 && python scripts/init_db.py
-```
-
-**Model download slow (first run):**
-The `all-MiniLM-L6-v2` model (~85MB) downloads once to `~/.cache/huggingface/`.
-
-**OCR not working:**
-```bash
-brew install tesseract       # macOS
-sudo apt install tesseract-ocr  # Ubuntu
-```
-
-**Resume after crash:**
-Simply re-run `make run-pipeline` — the checkpoint DB ensures no duplicates.
