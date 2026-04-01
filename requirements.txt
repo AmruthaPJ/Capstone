@@ -1,0 +1,48 @@
+# ─────────────────────────────────────────────
+#  Judicial AI Data Preprocessing Pipeline
+#  requirements.txt  (Python 3.13, macOS ARM)
+# ─────────────────────────────────────────────
+
+# ── PDF Extraction ────────────────────────────
+PyMuPDF>=1.24.10
+pdfplumber>=0.11.4
+pytesseract>=0.3.10
+Pillow>=11.0.0
+
+# ── Text & NLP ────────────────────────────────
+spacy>=3.8.7
+python-dateutil>=2.9.0
+
+# ── Embeddings ────────────────────────────────
+sentence-transformers>=3.3.1
+transformers>=4.47.0
+torch>=2.6.0
+tokenizers>=0.21.0
+
+# ── Vector Store ─────────────────────────────
+faiss-cpu>=1.9.0.post1
+numpy>=2.0.0
+
+# ── Database ──────────────────────────────────
+sqlalchemy[asyncio]>=2.0.30
+asyncpg>=0.30.0
+psycopg2-binary>=2.9.9
+alembic>=1.13.1
+
+# ── FastAPI ───────────────────────────────────
+fastapi>=0.111.0
+uvicorn[standard]>=0.29.0
+python-multipart>=0.0.9
+
+# ── Config & Utilities ────────────────────────
+pydantic>=2.7.1
+pydantic-settings>=2.3.0
+python-dotenv>=1.0.1
+tqdm>=4.66.4
+rich>=13.7.1
+loguru>=0.7.2
+
+# ── Testing ───────────────────────────────────
+pytest>=8.2.0
+pytest-asyncio>=0.23.6
+httpx>=0.27.0
